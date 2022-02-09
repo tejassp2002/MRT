@@ -1,46 +1,70 @@
 import cv2 as cv
 import numpy as np
 import math
+import os
 from matplotlib import pyplot as plt
-def abcd(img,templates):
+def abcd(img,right_templates,left_templates):
     threshold = 0.55
     img= cv.cvtColor(img, cv.COLOR_BGR2GRAY)
-    w, h = templates[0].shape[::-1]
-    res = []
+    
+    right_res = 0
+    right_loc = 0
+    left_res = 0
+    left_loc = 0
     img = cv.blur(img,(5,5))
-    for template in templates: 
+    for template in right_templates:         
         x = cv.matchTemplate(img, template, cv.TM_CCOEFF_NORMED)
-        res.append((np.max(x), np.unravel_index(x.argmax(), x.shape)))
+        if right_res <= np.max(x):
+            w, h = template.shape[::-1]
+            right_res = np.max(x)
+            right_loc = np.asarray(np.unravel_index(x.argmax(), x.shape))
+        else:
+            right_res=right_res
+            right_loc=right_loc
 
-    max_val1, max_loc1 = res[0]
-    max_val2, max_loc2 = res[1]
-    if max_val1 > max_val2 and max_val1 > threshold:
-        print("right")
-        max_loc = max_loc1
-    elif max_val2 > max_val1 and max_val2 > threshold:
-        print("left")
-        max_loc = max_loc2
+    for template in left_templates:         
+        x = cv.matchTemplate(img, template, cv.TM_CCOEFF_NORMED)
+        if left_res <= np.max(x):
+            w, h = template.shape[::-1]
+            left_res = np.max(x)
+            left_loc = np.asarray(np.unravel_index(x.argmax(), x.shape))
+        else:
+            left_res=left_res
+            left_loc=left_loc
+
+    if right_res > left_res and right_res > threshold:
+        # print("right")
+        max_loc = right_loc
+        return 1 
+    elif left_res > right_res and left_res > threshold:
+        # print("left")
+        max_loc = left_loc
+        return -1
     else:
-        print("Nothing")
-        return None
+        # print("Nothing")
+        return 0
     
     top_left = max_loc
     bottom_right = (top_left[0] + w, top_left[1] + h)
     # print(top_left,w,h)
     cropped_image = img[top_left[1]:bottom_right[1], top_left[0]:bottom_right[0]]
+    cv.imshow("cropped",cropped_image)
     ret,cropped_image = cv.threshold(cropped_image,127,255,cv.THRESH_BINARY)
     # kernel = np.ones((5,5),np.uint8)
-    kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE,(5,5))
-    erosion = cv.erode(cropped_image,kernel,iterations = 3)
-    dilation = cv.dilate(erosion,kernel,iterations = 3)
-    cv.imshow("cropped",dilation)
-    detect_corners(cropped_image)
+    # kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE,(5,5))
+    # erosion = cv.erode(cropped_image,kernel,iterations = 3)
+    # dilation = cv.dilate(erosion,kernel,iterations = 3)
+    # cv.imshow("cropped",dilation)
+    # detect_corners(dilation)
 
 def detect_corners(cropped_image):
     
     edges = cv.Canny(cropped_image, 100, 255) 
     cv.imshow("edges",edges)
     corners = cv.goodFeaturesToTrack(edges,5,0.01,1)
+    if corners is None:
+        print("Nothing")
+        return None
     corners = np.int0(corners)
     for i in corners:
         x,y = i.ravel()
@@ -62,24 +86,47 @@ def detect_corners(cropped_image):
         print("Nothing")    
 
 if __name__ == "__main__":
-
-    vid = cv.VideoCapture(1)
-    right_template = cv.imread('template/right.jpg',0)
-    left_template = cv.imread('template/left.jpg',0)
-    templates = [right_template,left_template]
+    every_frame = 10
+    vid = cv.VideoCapture(0)
+    right_templates = []
+    left_templates = []
+    for file in os.listdir("template"):
+        if file.startswith("right"):
+            print(file)
+            right_templates.append(cv.imread(f"template/{file}",0))
+    
+    for file in os.listdir("template"):
+        if file.startswith("left"):
+            print(file)
+            left_templates.append(cv.imread(f"template/{file}",0))
     scale_down = 0.6
 
-    templates = [cv.resize(template, None, fx= scale_down, fy= scale_down, interpolation= cv.INTER_LINEAR) for template in templates]
+    right_templates = [cv.resize(template, None, fx= scale_down, fy= scale_down, interpolation= cv.INTER_LINEAR) for template in right_templates]
+    left_templates = [cv.resize(template, None, fx= scale_down, fy= scale_down, interpolation= cv.INTER_LINEAR) for template in left_templates]
+    n_frames = 0
+    direction = 0
     while(True):
         
         # Capture the video frame
         # by frame
+    
         ret, frame = vid.read()
     
         # Display the resulting frame
         cv.imshow('frame', frame)
-        abcd(frame,templates)
         
+        n_frames+=1
+        direction += abcd(frame,right_templates,left_templates)
+        if n_frames%every_frame==0:
+            print(direction)
+            if direction>0.6*every_frame:
+                print("right")
+            elif direction<-0.6*every_frame:
+                print("left")
+            else:
+                print("Nothing")
+            direction = 0
+            
         # the 'q' button is set as the
         # quitting button you may use any
         # desired button of your choice
