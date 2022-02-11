@@ -4,16 +4,19 @@ import math
 import os
 from matplotlib import pyplot as plt
 def abcd(img,right_templates,left_templates):
+    kernel = np.ones((5,5),np.uint8)
+    kernel1 = cv.getStructuringElement(cv.MORPH_ELLIPSE,(5,5))
+    kernel2 = cv.getStructuringElement(cv.MORPH_RECT,(5,5))
     threshold = 0.55
-    img= cv.cvtColor(img, cv.COLOR_BGR2GRAY)
+    gray= cv.cvtColor(img, cv.COLOR_BGR2GRAY)
     
     right_res = 0
     right_loc = 0
     left_res = 0
     left_loc = 0
-    img = cv.blur(img,(5,5))
+    gray = cv.bilateralFilter(gray,9,75,75)
     for template in right_templates:         
-        x = cv.matchTemplate(img, template, cv.TM_CCOEFF_NORMED)
+        x = cv.matchTemplate(gray, template, cv.TM_CCOEFF_NORMED)
         if right_res <= np.max(x):
             w, h = template.shape[::-1]
             right_res = np.max(x)
@@ -23,7 +26,7 @@ def abcd(img,right_templates,left_templates):
             right_loc=right_loc
 
     for template in left_templates:         
-        x = cv.matchTemplate(img, template, cv.TM_CCOEFF_NORMED)
+        x = cv.matchTemplate(gray, template, cv.TM_CCOEFF_NORMED)
         if left_res <= np.max(x):
             w, h = template.shape[::-1]
             left_res = np.max(x)
@@ -35,11 +38,11 @@ def abcd(img,right_templates,left_templates):
     if right_res > left_res and right_res > threshold:
         # print("right")
         max_loc = right_loc
-        return 1 
+        direction = 1
     elif left_res > right_res and left_res > threshold:
         # print("left")
         max_loc = left_loc
-        return -1
+        direction = -1
     else:
         # print("Nothing")
         return 0
@@ -49,27 +52,48 @@ def abcd(img,right_templates,left_templates):
     # print(top_left,w,h)
     cropped_image = img[top_left[1]:bottom_right[1], top_left[0]:bottom_right[0]]
     cv.imshow("cropped",cropped_image)
-    ret,cropped_image = cv.threshold(cropped_image,127,255,cv.THRESH_BINARY)
-    # kernel = np.ones((5,5),np.uint8)
+    hsv = cv.cvtColor(cropped_image, cv.COLOR_BGR2HSV)
+
+    lower_hsv = np.array([0,0,10])
+    higher_hsv = np.array([179, 255, 100])
+    mask = cv.inRange(hsv, lower_hsv, higher_hsv)
+    frame = cv.bitwise_and(cropped_image, cropped_image, mask=mask)
+    # cv.imshow("frame",frame)
+    cv.imshow("mask",mask)
+    # closing = cv.morphologyEx(mask, cv.MORPH_CLOSE, kernel,iterations=3)
+    # ret,cropped_image = cv.threshold(cropped_image,127,255,cv.THRESH_BINARY)
+    
     # kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE,(5,5))
-    # erosion = cv.erode(cropped_image,kernel,iterations = 3)
-    # dilation = cv.dilate(erosion,kernel,iterations = 3)
+    mask = cv.bilateralFilter(mask,9,75,75)
+    erosion = cv.erode(mask,kernel1,iterations = 1)
+    dilation = cv.dilate(erosion,kernel2,iterations = 2)
+    dilation = cv.bilateralFilter(dilation,9,75,75)
     # cv.imshow("cropped",dilation)
     # detect_corners(dilation)
+    cv.imshow('dilation',dilation)
 
-def detect_corners(cropped_image):
+    return detect_corners(cropped_image,dilation,direction)
+
+def detect_corners(img,cropped_image,direction):
     
     edges = cv.Canny(cropped_image, 100, 255) 
-    cv.imshow("edges",edges)
     corners = cv.goodFeaturesToTrack(edges,5,0.01,1)
     if corners is None:
         print("Nothing")
-        return None
+        return 0
     corners = np.int0(corners)
     for i in corners:
         x,y = i.ravel()
-        cv.circle(edges,(x,y),4,255,-1)
-    cv.circle(edges,(edges.shape[1]//2,edges.shape[0]//2),4,255,-1)
+        cv.circle(edges,(x,y),7,255,-1)
+
+    contours,hierarchy = cv.findContours(cropped_image, 1, 2)
+    cv.drawContours(img, contours, -1, (0, 255, 0), 3)
+    cv.imshow("contours",img)
+
+    M = cv.moments(cropped_image)
+    centroid_x = int(M['m10']/M['m00'])
+    centroid_y = int(M['m01']/M['m00'])
+    cv.circle(edges,(centroid_x,centroid_y),1,255,-1)
     cv.imshow("center",edges)
     right = 0
     left = 0
@@ -78,12 +102,21 @@ def detect_corners(cropped_image):
             left +=1
         if corner[0][0]>=edges.shape[1]//2:
             right +=1
-    if right-2>left:
-        print("right")
-    elif left-2>right:
-        print("left")
+    if right>left:
+        if direction == 1:
+            # print("right")
+            return 1
+        else:
+            return 0
+    elif left>right:
+        if direction == -1:
+            # print("left")
+            return -1
+        else:
+            return 0
     else:
-        print("Nothing")    
+        # print("Nothing") 
+        return 0      
 
 if __name__ == "__main__":
     every_frame = 10
