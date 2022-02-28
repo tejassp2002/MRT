@@ -20,6 +20,8 @@ while(True):
     parameters =  cv.aruco.DetectorParameters_create()
     #return values: corners, Tag ID array (nonetype), rejected candidates for tags 
     corners, ids, rejects = cv.aruco.detectMarkers(im_bw, dictionary, parameters=parameters)
+    # TODO(Ashwin,Harsh): Use Camera Calibration
+    #corners, ids, rejects = cv.aruco.detectMarkers(im_bw, dictionary, parameters=parameters,cameraMatrix=cameraMatrix) 
     #drawing markers
     img = cv.aruco.drawDetectedMarkers(img_copy, corners, ids)
     if len(corners) > 0:
